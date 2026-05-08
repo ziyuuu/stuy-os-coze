@@ -1,0 +1,17 @@
+# coursera课程
+
+Source: https://www.notion.so/2ca50f34b9b9809db3e1c7e8e9ebe6ef
+
+Fetched via Notion connector.
+
+```notion
+<page url="https://www.notion.so/2ca50f34b9b9809db3e1c7e8e9ebe6ef">
+<ancestor-path></ancestor-path>
+<properties>
+{"title":"coursera课程"}
+</properties>
+<content>
+<database url="https://www.notion.so/2cc50f34b9b98026ba8ddfd1d660c439" inline="true" data-source-url="collection://2cc50f34-b9b9-8053-aa9a-000b08325c80">UVA产品经理系列</database>
+</content>
+</page>
+```

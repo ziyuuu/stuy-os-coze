@@ -1,0 +1,46 @@
+# 学习图书馆
+
+Source: https://www.notion.so/17a50f34b9b980c6878ceb451293951d
+
+Fetched via Notion connector.
+
+```notion
+<page url="https://www.notion.so/17a50f34b9b980c6878ceb451293951d" icon="🏫">
+<ancestor-path></ancestor-path>
+<properties>
+{"title":"学习图书馆"}
+</properties>
+<content>
+<columns>
+	<column>
+		<callout>
+			**数据库**
+			---
+			<database url="https://www.notion.so/19750f34b9b980a18997cd4830a66605" inline="false" icon="/icons/laptop_blue.svg" data-source-url="collection://19750f34-b9b9-80ce-a6a0-000b8a09aaae">主题</database>
+			<database url="https://www.notion.so/19750f34b9b980c2be13d00681b5aa4a" inline="false" icon="/icons/book-closed_blue.svg" data-source-url="collection://19750f34-b9b9-8022-a9db-000b1d30acfa">学习</database>
+			<database url="https://www.notion.so/19750f34b9b980a9baa3cf58cd72ed16" inline="false" icon="/icons/pencil_blue.svg" data-source-url="collection://19750f34-b9b9-80a3-86ef-000b9588a04e">笔记</database>
+			<database url="https://www.notion.so/19750f34b9b98096812bc5248f63990e" inline="false" icon="❔" data-source-url="collection://19750f34-b9b9-803b-9d4e-000b6e9243e1">问题</database>
+			<database url="https://www.notion.so/25b50f34b9b980d6aad0cf74d4c284f6" inline="false" icon="⭕" data-source-url="collection://25b50f34-b9b9-81fa-948f-000b3bcfab48">练习</database>
+			---
+			<database url="https://www.notion.so/19750f34b9b98062aecee1ba97214d89" inline="false" icon="/icons/shopping-bag_blue.svg" data-source-url="collection://19750f34-b9b9-804c-8870-000b81c59be9">消费</database>
+			<database url="https://www.notion.so/19750f34b9b980ae9723cc0c6f982bcd" inline="false" icon="⌨️" data-source-url="collection://19750f34-b9b9-8063-956c-000bd1cd35e5">自动化</database>
+		</callout>
+		<span color="orange">***学习积分：***</span>
+		<database url="https://www.notion.so/19750f34b9b9804c9a0cc043f3f33bd2" inline="true" data-source-url="collection://19750f34-b9b9-8063-956c-000bd1cd35e5">积分 视图</database>
+		<empty-block/>
+	</column>
+	<column>
+		<callout>
+			<database url="https://www.notion.so/19750f34b9b9806398a3e9a6270e905d" inline="true" data-source-url="collection://19750f34-b9b9-80ce-a6a0-000b8a09aaae">学习 视图</database>
+			---
+			<database url="https://www.notion.so/19750f34b9b980cc8354d5b7232ebceb" inline="true" data-source-url="collection://19750f34-b9b9-8022-a9db-000b1d30acfa">笔记 视图</database>
+			---
+			<database url="https://www.notion.so/19750f34b9b980238f06d458cf6a848c" inline="true" data-source-url="collection://19750f34-b9b9-803b-9d4e-000b6e9243e1">问题 视图</database>
+		</callout>
+		<empty-block/>
+	</column>
+</columns>
+<empty-block/>
+</content>
+</page>
+```

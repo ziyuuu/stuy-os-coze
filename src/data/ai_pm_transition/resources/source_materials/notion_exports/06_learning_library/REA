@@ -1,0 +1,31 @@
+# Learning Library
+
+## Source
+
+- Page: https://www.notion.so/17a50f34b9b980c6878ceb451293951d
+
+## Page Structure
+
+The page contains linked databases:
+
+| Database | Notion URL | Data Source | Imported |
+| --- | --- | --- | --- |
+| 主题 | https://www.notion.so/19750f34b9b980a18997cd4830a66605 | `collection://19750f34-b9b9-80ce-a6a0-000b8a09aaae` | yes |
+| 学习 | https://www.notion.so/19750f34b9b980c2be13d00681b5aa4a | `collection://19750f34-b9b9-8022-a9db-000b1d30acfa` | yes |
+| 笔记 | https://www.notion.so/19750f34b9b980a9baa3cf58cd72ed16 | `collection://19750f34-b9b9-80a3-86ef-000b9588a04e` | yes |
+| 问题 | https://www.notion.so/19750f34b9b98096812bc5248f63990e | `collection://19750f34-b9b9-803b-9d4e-000b6e9243e1` | yes |
+| 练习 | https://www.notion.so/25b50f34b9b980d6aad0cf74d4c284f6 | `collection://25b50f34-b9b9-81fa-948f-000b3bcfab48` | yes |
+| 消费 | https://www.notion.so/19750f34b9b98062aecee1ba97214d89 | `collection://19750f34-b9b9-804c-8870-000b81c59be9` | no |
+| 自动化 | https://www.notion.so/19750f34b9b980ae9723cc0c6f982bcd | `collection://19750f34-b9b9-8063-956c-000bd1cd35e5` | no |
+
+`消费` and `自动化` were not imported because the request was for learning-library resources and these two databases are not clearly learning resources.
+
+## Discovered Resource Inventories
+
+See:
+
+- `topics.md`
+- `learning.md`
+- `notes.md`
+- `questions.md`
+- `exercises.md`

@@ -1,0 +1,30 @@
+# Coursera Courses
+
+## Source
+
+- Page: https://www.notion.so/2ca50f34b9b9809db3e1c7e8e9ebe6ef
+- Embedded database: https://www.notion.so/2cc50f34b9b98026ba8ddfd1d660c439
+- Data source: `collection://2cc50f34-b9b9-8053-aa9a-000b08325c80`
+
+## Page Structure
+
+The `coursera课程` page contains an inline database named `UVA产品经理系列`.
+
+## Database Schema
+
+| Property | Type |
+| --- | --- |
+| 名称 | title |
+
+## Discovered Course Pages
+
+| Title | Notion URL | Last Seen |
+| --- | --- | --- |
+| UVA产品经理第一周 | https://www.notion.so/2cc50f34b9b980c89187d2bed254eb20 | 2026-01-25 |
+| UVA产品经理第二周 | https://www.notion.so/2cc50f34b9b98007b3dcf71b0b739c4f | 2026-01-25 |
+| UVA产品经理第三周 | https://www.notion.so/2d250f34b9b9808a88a9c229c0249d06 | 2026-01-25 |
+| UVA产品经理第四周 | https://www.notion.so/2d350f34b9b980e0832fc95ee7cf2920 | 2026-01-25 |
+| AMDT产品经理敏捷第一周 | https://www.notion.so/2e450f34b9b980d692cae9ebfd559ce7 | 2026-01-25 |
+| AMDT产品经理敏捷第二周 | https://www.notion.so/2e750f34b9b9801e87c4e9b679a19806 | 2026-01-25 |
+| AMDT产品经理敏捷第三周 | https://www.notion.so/2f050f34b9b98092bfd0dd073e5f6e6d | 2026-01-25 |
+| AMDT产品经理敏捷第四周 | https://www.notion.so/2f350f34b9b9803e8a22e78835f14d71 | 2026-01-25 |
