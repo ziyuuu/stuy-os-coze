@@ -9,8 +9,9 @@
  */
 
 import { NextRequest } from "next/server";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import os from "os";
 import { LLMClient, Config } from "coze-coding-dev-sdk";
 
 const DATA_BASE_PATH = join(process.cwd(), "src/data/ai_pm_transition");
@@ -203,8 +204,40 @@ export async function readFileContents(paths: string[]): Promise<string[]> {
   return results;
 }
 
+interface LLMSettings {
+  systemModel?: string;
+  customModel?: string;
+  customApiKey?: string;
+  customEndpoint?: string;
+}
+
+function resolveLLMSettingsPath(): string | null {
+  const candidates = [
+    process.env.STUDY_OS_STORAGE_DIR,
+    join(process.cwd(), ".study-os-runtime"),
+    join(os.tmpdir(), "study-os-runtime"),
+  ].filter((v): v is string => Boolean(v));
+
+  for (const dir of candidates) {
+    const filePath = join(dir, "settings", "llm-settings.json");
+    if (existsSync(filePath)) return filePath;
+  }
+  return null;
+}
+
+function loadLLMSettings(): LLMSettings | null {
+  try {
+    const path = resolveLLMSettingsPath();
+    if (!path) return null;
+    return JSON.parse(readFileSync(path, "utf-8")) as LLMSettings;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 流式生成文本 - 通用接口
+ * 优先使用用户自定义 API 设置，否则回退到 Coze 平台 env vars
  */
 export async function generateFromLLM(
   messages: Array<{ role: "user" | "assistant" | "system"; content: string }>,
@@ -215,13 +248,21 @@ export async function generateFromLLM(
     temperature?: number;
   }
 ): Promise<string> {
-  const config = new Config({
-    apiKey: process.env.COZE_WORKLOAD_IDENTITY_API_KEY || "",
-    baseUrl: process.env.COZE_INTEGRATION_BASE_URL,
-  });
+  const settings = loadLLMSettings();
+
+  // 用户自定义 API 优先
+  const apiKey =
+    settings?.customApiKey ||
+    process.env.COZE_WORKLOAD_IDENTITY_API_KEY ||
+    "";
+  const baseUrl =
+    settings?.customEndpoint ||
+    process.env.COZE_INTEGRATION_BASE_URL;
+
+  const config = new Config({ apiKey, baseUrl });
   const client = new LLMClient(config);
-  
-  const model = options?.model || DEFAULT_MODEL;
+
+  const model = options?.model || settings?.customModel || settings?.systemModel || DEFAULT_MODEL;
   const temperature = options?.temperature ?? 0.7;
 
   const allMessages = [
