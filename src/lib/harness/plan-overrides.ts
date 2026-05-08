@@ -5,6 +5,13 @@ export async function readLatestPlanContent(planType: string): Promise<string | 
     kind: "plan",
     status: "committed",
   });
-  const latest = artifacts.find((artifact) => artifact.metadata?.planType === planType);
+  // Prefer the latest artifact with matching planType.
+  // Old status-change artifacts (before the fix) have only a short status message
+  // as content — skip those in favor of the next match that has real plan content.
+  const latest = artifacts.find(
+    (artifact) =>
+      artifact.metadata?.planType === planType &&
+      (artifact.content?.length || 0) > 100
+  );
   return latest?.content || null;
 }

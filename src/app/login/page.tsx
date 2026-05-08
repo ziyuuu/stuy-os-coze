@@ -1,17 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, LockKeyhole } from "lucide-react";
 
-export default function LoginPage() {
-  const router = useRouter();
+function LoginForm() {
+  const searchParams = useSearchParams();
+  const from = searchParams.get("from") || "/";
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/status")
+      .then((res) => res.json())
+      .then((data) => { if (data.success) window.location.href = from; })
+      .catch(() => {});
+  }, [from]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +35,7 @@ export default function LoginPage() {
       });
       const data = await res.json();
       if (data.success) {
-        router.replace("/");
+        window.location.href = from;
       } else {
         setError(data.error || "登录失败");
       }
@@ -70,5 +78,13 @@ export default function LoginPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950" />}>
+      <LoginForm />
+    </Suspense>
   );
 }

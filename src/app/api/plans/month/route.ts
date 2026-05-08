@@ -19,12 +19,18 @@ export async function PUT(request: Request) {
       );
     }
 
+    // 替换内容中的状态行
+    const updatedContent = content.replace(
+      /计划状态[：:]\s*[^\s\n]+/,
+      `计划状态：${status}`
+    );
+
     const artifact = await getWorkflowService().createAndCommitUserArtifact(
       {
         workflowType: 'state_adjust',
         artifactKind: 'plan',
-        title: `monthly plan status ${status}`,
-        content: `用户将当前月计划状态调整为：${status}`,
+        title: `monthly plan (status: ${status})`,
+        content: updatedContent,
         evidenceType: 'user_fact',
         metadata: {
           planType: 'monthly',

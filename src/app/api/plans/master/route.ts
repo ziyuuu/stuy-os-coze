@@ -7,13 +7,23 @@ import { ensureSeedData } from '@/lib/harness/seed';
 
 export async function PUT(request: Request) {
   try {
+    await ensureSeedData();
     const { status } = await request.json();
+    const content = await readLatestPlanContent('master');
+
+    if (!content) {
+      return NextResponse.json(
+        { success: false, error: 'Master Plan 文件不存在' },
+        { status: 404 }
+      );
+    }
+
     const artifact = await getWorkflowService().createAndCommitUserArtifact(
       {
         workflowType: 'state_adjust',
         artifactKind: 'plan',
-        title: `master plan status ${status}`,
-        content: `用户将 Master Plan 状态调整为：${status}`,
+        title: `master plan (status: ${status})`,
+        content,
         evidenceType: 'user_fact',
         metadata: {
           planType: 'master',

@@ -35,6 +35,7 @@ export type ArtifactKind =
   | "source_material"
   | "learning_record"
   | "idea_pool"
+  | "coach_chat"
   | "unknown";
 
 export type ArtifactStatus = "draft" | "committed" | "archived" | "superseded";
@@ -46,7 +47,8 @@ export type EvidenceType =
   | "plan_intent"
   | "draft"
   | "system_event"
-  | "imported";
+  | "imported"
+  | "coach_conversation";
 
 export type ImportItemKind =
   | "source_material"

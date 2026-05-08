@@ -441,7 +441,9 @@ export default function PlansPage() {
   };
 
   // 渲染设置菜单
-  const renderSettingsMenu = (planType: PlanType, currentStatus: string) => (
+  const renderSettingsMenu = (planType: PlanType, currentStatus?: string) => {
+    const hasStatus = planType !== 'master'; // master 计划只有版本号，没有状态
+    return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -449,10 +451,12 @@ export default function PlansPage() {
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => openStatusDialog(planType, currentStatus)}>
-          <Edit className="mr-2 h-4 w-4" />
-          调整状态
-        </DropdownMenuItem>
+        {hasStatus && currentStatus !== undefined && (
+          <DropdownMenuItem onClick={() => openStatusDialog(planType, currentStatus)}>
+            <Edit className="mr-2 h-4 w-4" />
+            调整状态
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={() => openEditDialog(planType)}>
           <FileText className="mr-2 h-4 w-4" />
           编辑内容
@@ -462,7 +466,7 @@ export default function PlansPage() {
           上传计划
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={() => openDeleteDialog(planType)}
           className="text-destructive focus:text-destructive"
         >
@@ -471,7 +475,7 @@ export default function PlansPage() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  );};
 
   if (loading) {
     return <PlanSkeleton />;
@@ -536,7 +540,7 @@ export default function PlansPage() {
               <Badge variant="outline" className="text-xs">
                 {masterPlan?.totalMonths || 12} 个月
               </Badge>
-              {renderSettingsMenu('master', masterPlan?.version || '2.0')}
+              {renderSettingsMenu('master')}
             </div>
           </CardHeader>
           <CardContent>
