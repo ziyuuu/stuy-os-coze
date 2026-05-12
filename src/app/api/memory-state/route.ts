@@ -64,6 +64,10 @@ function validateNextActions(value: unknown): string[] | undefined {
   return result.length > 0 ? result : undefined;
 }
 
+/**
+ * 内部接口 — 由计划状态变更、复盘确认、AI 教练对话等系统流程调用。
+ * 前端 MemoryState 页面已改为只读展示，用户不应直接调用此接口。
+ */
 export async function POST(request: NextRequest) {
   try {
     const raw = await request.json();
@@ -115,7 +119,7 @@ export async function POST(request: NextRequest) {
       eventType: "memory_state_updated",
       targetId: saved.id,
       targetType: "memory_state",
-      message: "MemoryState updated manually via settings page",
+      message: "MemoryState updated via internal system flow",
       metadata: { updatedFields: Object.keys(body).filter((k) => body[k as keyof MemoryStateUpdate] !== undefined) },
       createdAt: now,
       updatedAt: now,

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getWorkflowService } from "@/lib/harness/workflow";
 import type { ArtifactKind } from "@/lib/harness/types";
+import { PLAN_TYPE_TO_STORAGE_KEY, normalizePlanType } from "@/lib/plans/lifecycle";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,15 +20,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!PLAN_TYPE_TO_STORAGE_KEY[planType]) {
+      return NextResponse.json(
+        { success: false, error: "无效的计划类型" },
+        { status: 400 }
+      );
+    }
+
     const today = date || new Date().toISOString().split("T")[0];
     const normalizedType = normalizePlanType(planType);
-
-    if (!normalizedType) {
-        return NextResponse.json(
-          { success: false, error: "无效的计划类型" },
-          { status: 400 }
-        );
-    }
 
     const artifact = await getWorkflowService().createAndCommitUserArtifact(
       {
@@ -61,16 +62,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-function normalizePlanType(planType: string): string | null {
-  const map: Record<string, string> = {
-    master: "master",
-    month: "monthly",
-    monthly: "monthly",
-    week: "weekly",
-    weekly: "weekly",
-    daily: "daily",
-  };
-  return map[planType] || null;
 }

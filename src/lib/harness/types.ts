@@ -163,7 +163,8 @@ export interface AuditLog extends HarnessRecord {
     | "import_batch_saved"
     | "import_batch_confirmed"
     | "state_update_suggested"
-    | "memory_state_updated";
+    | "memory_state_updated"
+    | "plan_status_changed";
   targetId: string;
   targetType: string;
   message: string;

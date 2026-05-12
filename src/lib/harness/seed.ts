@@ -29,8 +29,9 @@ interface SeedFile {
 
 function safeArtifactId(prefix: string, relativePath: string): string {
   const safe = relativePath
-    .replace(/[^a-zA-Z0-9_.-]/g, "_")
-    .replace(/\.md$/, "");
+    .replace(/[^a-zA-Z0-9_.-]+/g, "_")
+    .replace(/\.md$/, "")
+    .replace(/^[_.-]+|[_.-]+$/g, "");
   return `seed-${prefix}-${safe}`;
 }
 

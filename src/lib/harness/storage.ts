@@ -1,4 +1,5 @@
 import fs from "fs";
+import { promises as fsp } from "fs";
 import path from "path";
 import os from "os";
 import type {
@@ -17,15 +18,17 @@ import { createId, nowIso } from "./id";
 const RUNTIME_DIR_NAME = ".study-os-runtime";
 
 function safeFileName(id: string): string {
-  return id.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  return id
+    .replace(/[^a-zA-Z0-9_.-]+/g, "_")
+    .replace(/^[_.-]+|[_.-]+$/g, "");
 }
 
-function readJsonFile<T>(filePath: string): T | null {
-  if (!fs.existsSync(filePath)) return null;
+async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
-    const raw = fs.readFileSync(filePath, "utf-8");
+    const raw = await fsp.readFile(filePath, "utf-8");
     return JSON.parse(raw) as T;
   } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
     const message = error instanceof SyntaxError
       ? `Storage: 无法解析 JSON 文件 ${filePath}: ${error.message}`
       : `Storage: 无法读取文件 ${filePath}: ${(error as Error).message}`;
@@ -33,30 +36,36 @@ function readJsonFile<T>(filePath: string): T | null {
   }
 }
 
-function writeJsonFile(filePath: string, data: unknown): void {
+async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   const dir = path.dirname(filePath);
   try {
-    fs.mkdirSync(dir, { recursive: true });
+    await fsp.mkdir(dir, { recursive: true });
   } catch (error) {
     throw new Error(`Storage: 无法创建目录 ${dir}: ${(error as Error).message}`);
   }
   try {
-    // Write to temp file first, then rename for atomicity
     const tmpPath = filePath + ".tmp." + Date.now();
-    fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), "utf-8");
-    fs.renameSync(tmpPath, filePath);
+    await fsp.writeFile(tmpPath, JSON.stringify(data, null, 2), "utf-8");
+    await fsp.rename(tmpPath, filePath);
   } catch (error) {
     throw new Error(`Storage: 无法写入文件 ${filePath}: ${(error as Error).message}`);
   }
 }
 
-function listJsonFiles<T>(dirPath: string): T[] {
-  if (!fs.existsSync(dirPath)) return [];
-  return fs
-    .readdirSync(dirPath)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => readJsonFile<T>(path.join(dirPath, name)))
-    .filter((value): value is T => Boolean(value));
+async function listJsonFiles<T>(dirPath: string): Promise<T[]> {
+  try {
+    const names = await fsp.readdir(dirPath);
+    const results: T[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const item = await readJsonFile<T>(path.join(dirPath, name));
+      if (item !== null) results.push(item);
+    }
+    return results;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 function isWritableDir(dirPath: string): boolean {
@@ -88,6 +97,28 @@ export class LocalFileStorageAdapter implements StorageAdapter {
 
   constructor(root = resolveRuntimeRoot()) {
     this.root = root;
+    this.cleanupOrphanedTmpFiles();
+  }
+
+  private cleanupOrphanedTmpFiles(): void {
+    try {
+      if (!fs.existsSync(this.root)) return;
+      for (const dir of fs.readdirSync(this.root)) {
+        const dirPath = path.join(this.root, dir);
+        if (!fs.statSync(dirPath).isDirectory()) continue;
+        for (const entry of fs.readdirSync(dirPath)) {
+          if (entry.includes(".tmp.")) {
+            try {
+              fs.unlinkSync(path.join(dirPath, entry));
+            } catch {
+              // 跳过无法删除的文件
+            }
+          }
+        }
+      }
+    } catch {
+      // best-effort cleanup
+    }
   }
 
   private filePath(collection: string, id: string): string {
@@ -99,11 +130,11 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async readArtifact(id: string): Promise<Artifact | null> {
-    return readJsonFile<Artifact>(this.filePath("artifacts", id));
+    return await readJsonFile<Artifact>(this.filePath("artifacts", id));
   }
 
   async saveArtifact(artifact: Artifact): Promise<Artifact> {
-    writeJsonFile(this.filePath("artifacts", artifact.id), artifact);
+    await writeJsonFile(this.filePath("artifacts", artifact.id), artifact);
     await this.appendAuditLog({
       id: createId("audit"),
       eventType: "artifact_saved",
@@ -118,7 +149,7 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async listArtifacts(filter: ArtifactFilter = {}): Promise<Artifact[]> {
-    return listJsonFiles<Artifact>(this.collectionPath("artifacts"))
+    return (await listJsonFiles<Artifact>(this.collectionPath("artifacts")))
       .filter((artifact) => !filter.kind || artifact.kind === filter.kind)
       .filter((artifact) => !filter.status || artifact.status === filter.status)
       .filter((artifact) => !filter.sourceDraftId || artifact.sourceDraftId === filter.sourceDraftId)
@@ -130,7 +161,7 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async saveDraft(draft: Draft): Promise<Draft> {
-    writeJsonFile(this.filePath("drafts", draft.id), draft);
+    await writeJsonFile(this.filePath("drafts", draft.id), draft);
     await this.appendAuditLog({
       id: createId("audit"),
       eventType: "draft_saved",
@@ -145,7 +176,7 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async readDraft(id: string): Promise<Draft | null> {
-    return readJsonFile<Draft>(this.filePath("drafts", id));
+    return await readJsonFile<Draft>(this.filePath("drafts", id));
   }
 
   async commitDraft(draftId: string, confirmation: Confirmation): Promise<Artifact> {
@@ -186,9 +217,9 @@ export class LocalFileStorageAdapter implements StorageAdapter {
       updatedAt: now,
     };
 
-    writeJsonFile(this.filePath("drafts", draft.id), committedDraft);
-    writeJsonFile(this.filePath("confirmations", confirmation.id), confirmation);
-    writeJsonFile(this.filePath("artifacts", artifact.id), artifact);
+    await writeJsonFile(this.filePath("artifacts", artifact.id), artifact);
+    await writeJsonFile(this.filePath("drafts", draft.id), committedDraft);
+    await writeJsonFile(this.filePath("confirmations", confirmation.id), confirmation);
 
     await this.appendAuditLog({
       id: createId("audit"),
@@ -205,7 +236,7 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async saveWorkflowRun(run: WorkflowRun): Promise<WorkflowRun> {
-    writeJsonFile(this.filePath("workflow-runs", run.id), run);
+    await writeJsonFile(this.filePath("workflow-runs", run.id), run);
     await this.appendAuditLog({
       id: createId("audit"),
       eventType: "workflow_run_saved",
@@ -220,11 +251,11 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async readWorkflowRun(id: string): Promise<WorkflowRun | null> {
-    return readJsonFile<WorkflowRun>(this.filePath("workflow-runs", id));
+    return await readJsonFile<WorkflowRun>(this.filePath("workflow-runs", id));
   }
 
   async saveImportBatch(batch: ImportBatch): Promise<ImportBatch> {
-    writeJsonFile(this.filePath("import-batches", batch.id), batch);
+    await writeJsonFile(this.filePath("import-batches", batch.id), batch);
     await this.appendAuditLog({
       id: createId("audit"),
       eventType: "import_batch_saved",
@@ -239,17 +270,17 @@ export class LocalFileStorageAdapter implements StorageAdapter {
   }
 
   async readImportBatch(id: string): Promise<ImportBatch | null> {
-    return readJsonFile<ImportBatch>(this.filePath("import-batches", id));
+    return await readJsonFile<ImportBatch>(this.filePath("import-batches", id));
   }
 
   async listDrafts(filter: { status?: string } = {}): Promise<Draft[]> {
-    return listJsonFiles<Draft>(this.collectionPath("drafts"))
+    return (await listJsonFiles<Draft>(this.collectionPath("drafts")))
       .filter((draft) => !filter.status || draft.status === filter.status)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async readMemoryState(): Promise<MemoryState | null> {
-    return readJsonFile<MemoryState>(this.filePath("memory-state", "current"));
+    return await readJsonFile<MemoryState>(this.filePath("memory-state", "current"));
   }
 
   async saveMemoryState(state: MemoryState): Promise<MemoryState> {
@@ -259,13 +290,13 @@ export class LocalFileStorageAdapter implements StorageAdapter {
       updatedAt: now,
       createdAt: state.createdAt || now,
     };
-    writeJsonFile(this.filePath("memory-state", "current"), saved);
+    await writeJsonFile(this.filePath("memory-state", "current"), saved);
     return saved;
   }
 
   async appendAuditLog(event: AuditLog): Promise<void> {
-    fs.mkdirSync(this.root, { recursive: true });
-    fs.appendFileSync(path.join(this.root, "audit-log.jsonl"), `${JSON.stringify(event)}\n`, "utf-8");
+    await fsp.mkdir(this.root, { recursive: true });
+    await fsp.appendFile(path.join(this.root, "audit-log.jsonl"), `${JSON.stringify(event)}\n`, "utf-8");
   }
 }
 

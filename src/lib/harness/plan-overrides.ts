@@ -1,4 +1,5 @@
 import { getStorageAdapter } from "./storage";
+import { MIN_PLAN_CONTENT_LENGTH } from "../plans/lifecycle";
 
 export async function readLatestPlanContent(planType: string): Promise<string | null> {
   const artifacts = await getStorageAdapter().listArtifacts({
@@ -11,7 +12,7 @@ export async function readLatestPlanContent(planType: string): Promise<string | 
   const latest = artifacts.find(
     (artifact) =>
       artifact.metadata?.planType === planType &&
-      (artifact.content?.length || 0) > 100
+      (artifact.content?.length || 0) > MIN_PLAN_CONTENT_LENGTH
   );
   return latest?.content || null;
 }

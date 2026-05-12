@@ -1,5 +1,5 @@
-import { HarnessDashboard } from "@/components/dashboard/harness-dashboard";
+import { AICoachMain } from "@/components/coach/ai-coach-main";
 
 export default function HomePage() {
-  return <HarnessDashboard />;
+  return <AICoachMain />;
 }

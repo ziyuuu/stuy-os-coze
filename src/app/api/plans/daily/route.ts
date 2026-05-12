@@ -1,15 +1,17 @@
 // API: /api/plans/daily - 获取和更新当前日计划
 import { NextResponse } from 'next/server';
 import { extractListItems, parseFrontMatter } from '@/lib/file-utils';
-import { getWorkflowService } from '@/lib/harness/workflow';
 import { readLatestPlanContent } from '@/lib/harness/plan-overrides';
 import { ensureSeedData } from '@/lib/harness/seed';
+import { updatePlanStatus, autoTransitionOnGet } from '@/lib/plans/status-api';
+import type { PlanStatus } from '@/lib/plans/lifecycle';
 
 export async function GET() {
   try {
     await ensureSeedData();
+    const autoTransition = await autoTransitionOnGet('daily').catch(() => ({ status: 'draft' as PlanStatus, transitioned: false, phase: 'in_period' as const, warnings: [] as string[] }));
     const content = await readLatestPlanContent('daily');
-    
+
     if (!content) {
       return NextResponse.json(
         { success: false, error: '日计划文件不存在' },
@@ -19,16 +21,16 @@ export async function GET() {
 
     const { metadata, body } = parseFrontMatter(content);
     const listItems = extractListItems(body);
+    const status = autoTransition.status;
+    const warnings = autoTransition.warnings || [];
 
-    // 提取日信息
     const dailyInfo = {
       date: (metadata['日期'] as string) || '',
-      status: (metadata['计划状态'] as string) || 'pending',
+      status,
       weekPlan: (metadata['对应周计划'] as string) || '',
       phase: (metadata['对应阶段'] as string) || ''
     };
 
-    // 提取今日任务
     const tasks = listItems
       .filter(item => item.length > 0)
       .slice(0, 5)
@@ -41,7 +43,8 @@ export async function GET() {
       success: true,
       data: {
         ...dailyInfo,
-        tasks
+        tasks,
+        warnings
       }
     });
   } catch (error) {
@@ -53,56 +56,29 @@ export async function GET() {
   }
 }
 
-// PUT: 更新日计划状态
+import { parseBody } from '@/lib/validation/helpers';
+import { PlanStatusUpdateSchema } from '@/lib/validation/schemas';
+
 export async function PUT(request: Request) {
+  const parsed = await parseBody(request, PlanStatusUpdateSchema);
+  if (!parsed.success) return parsed.errorResponse;
+  const { status } = parsed.data;
+
   try {
-    await ensureSeedData();
-    const { status } = await request.json();
-    const content = await readLatestPlanContent('daily');
-    
-    if (!content) {
-      return NextResponse.json(
-        { success: false, error: '日计划文件不存在' },
-        { status: 404 }
-      );
-    }
-
-    // 替换内容中的状态行
-    const updatedContent = content.replace(
-      /计划状态[：:]\s*[^\s\n]+/,
-      `计划状态：${status}`
-    );
-
-    const artifact = await getWorkflowService().createAndCommitUserArtifact(
-      {
-        workflowType: 'state_adjust',
-        artifactKind: 'plan',
-        title: `daily plan (status: ${status})`,
-        content: updatedContent,
-        evidenceType: 'user_fact',
-        metadata: {
-          planType: 'daily',
-          status,
-          source: 'compat_plans_daily_put',
-        },
-      },
-      'User confirmed daily plan status adjustment.'
-    );
-
+    const result = await updatePlanStatus('daily', status as PlanStatus);
     return NextResponse.json({
       success: true,
-      data: { status, artifact }
+      data: { status, artifact: result.artifact },
     });
   } catch (error) {
     console.error('更新日计划状态失败:', error);
     return NextResponse.json(
-      { success: false, error: '更新日计划状态失败' },
+      { success: false, error: (error as Error).message || '更新日计划状态失败' },
       { status: 500 }
     );
   }
 }
 
-// DELETE: 删除日计划
 export async function DELETE() {
   return NextResponse.json(
     {

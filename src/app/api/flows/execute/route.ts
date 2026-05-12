@@ -14,20 +14,18 @@ import type { FlowType } from "@/lib/flow-engine";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { flowType, userInput } = body as {
-      flowType: FlowType;
-      userInput?: string;
-    };
+import { parseBody } from '@/lib/validation/helpers';
+import { FlowExecuteSchema } from '@/lib/validation/schemas';
 
-    if (!flowType) {
-      return new NextResponse(
-        "data: {\"error\": \"缺少 flowType 参数\"}\n\n",
-        {
-          status: 400,
-          headers: {
+export async function POST(request: NextRequest) {
+  const parsed = await parseBody(request, FlowExecuteSchema);
+  if (!parsed.success) {
+    const { error } = await parsed.errorResponse.json();
+    return new NextResponse(
+      `data: ${JSON.stringify({ error: error || "参数校验失败" })}\n\n`,
+      {
+        status: 400,
+        headers: {
             "Content-Type": "text/event-stream",
             "Cache-Control": "no-cache",
             Connection: "keep-alive",
@@ -36,12 +34,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const flowDef = getFlowDefinition(flowType);
+  const { flowType, userInput } = parsed.data;
+
+  try {
+    const flowDef = getFlowDefinition(flowType as FlowType);
     if (!flowDef) {
       return NextResponse.json({ error: `未知的流程类型: ${flowType}` }, { status: 400 });
     }
 
-    const validation = await validateFlow(flowType, userInput);
+    const validation = await validateFlow(flowType as FlowType, userInput);
     if (!validation.canProceed) {
       return new Response("前置条件不满足，请先补齐上下文或用户事实输入。", {
         status: 400,
@@ -53,7 +54,7 @@ export async function POST(request: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const files = await readFlowFiles(flowType);
+          const files = await readFlowFiles(flowType as FlowType);
           const prompt = `## 角色
 你是一个专业的 AI PM 学习助手，帮助用户执行 ${flowDef.name} 流程。
 

@@ -7,6 +7,7 @@ import { AICoachPanel } from "../coach/ai-coach-panel";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLogin = pathname === "/login";
+  const isHome = pathname === "/";
 
   if (isLogin) return <>{children}</>;
 
@@ -16,7 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 overflow-y-auto py-6 px-6">
         {children}
       </main>
-      <AICoachPanel />
+      {!isHome && <AICoachPanel />}
     </div>
   );
 }

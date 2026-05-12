@@ -8,8 +8,7 @@
  * 4. 支持多种模型配置
  */
 
-import { NextRequest } from "next/server";
-import { readFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 import os from "os";
 import { LLMClient, Config } from "coze-coding-dev-sdk";
@@ -112,18 +111,8 @@ export function buildContextMessage(
  * LLM Service 类 - 使用 Coze SDK
  */
 export class LLMService {
-  private client: LLMClient;
-
-  constructor() {
-    const config = new Config({
-      apiKey: process.env.COZE_WORKLOAD_IDENTITY_API_KEY || "",
-      baseUrl: process.env.COZE_INTEGRATION_BASE_URL,
-    });
-    this.client = new LLMClient(config);
-  }
-
   /**
-   * 流式调用 LLM
+   * 流式调用 LLM — 委托给 generateFromLLM 统一处理配置和错误
    */
   async *streamGenerate(
     files: FileReadResult[],
@@ -131,41 +120,22 @@ export class LLMService {
     config?: LLMServiceConfig
   ): AsyncGenerator<string, void, unknown> {
     const contextMessage = buildContextMessage(files, instruction);
-    
-    const messages = [
-      {
-        role: "system" as const,
-        content: `你是一个专业的 AI PM 学习教练。你需要：
+
+    const systemPrompt = `你是一个专业的 AI PM 学习教练。你需要：
 1. 严格按照用户提供的文件路径读取并理解内容
 2. 严格按照任务指令执行
 3. 遵循文件的原始格式和结构
 4. 生成的内容应该可直接保存为 Markdown 文件
-5. 如果发现问题或前置条件不满足，必须明确指出`,
-      },
-      {
-        role: "user" as const,
-        content: contextMessage,
-      },
-    ];
+5. 如果发现问题或前置条件不满足，必须明确指出`;
 
-    const model = config?.model || DEFAULT_MODEL;
-    const temperature = config?.temperature ?? 0.7;
-
-    try {
-      const response = await this.client.invoke(messages, {
-        model,
-        temperature,
-        streaming: true,
-      });
-
-      if (!response.content) {
-        throw new Error("No response content");
-      }
-
-      yield response.content;
-    } catch (error) {
-      throw new Error(`LLM API error: ${error instanceof Error ? error.message : "Unknown error"}`);
-    }
+    let result = "";
+    await generateFromLLM(
+      [{ role: "user", content: contextMessage }],
+      systemPrompt,
+      (chunk) => { result += chunk; },
+      { model: config?.model, temperature: config?.temperature }
+    );
+    yield result;
   }
 
   /**
@@ -259,7 +229,7 @@ export async function generateFromLLM(
     settings?.customEndpoint ||
     process.env.COZE_INTEGRATION_BASE_URL;
 
-  const config = new Config({ apiKey, baseUrl });
+  const config = new Config({ apiKey, baseUrl, modelBaseUrl: baseUrl });
   const client = new LLMClient(config);
 
   const model = options?.model || settings?.customModel || settings?.systemModel || DEFAULT_MODEL;
@@ -329,9 +299,11 @@ export async function testLLMConnection(options?: {
     }
     
     // 否则使用 Coze 平台
+    const baseUrl = process.env.COZE_INTEGRATION_BASE_URL;
     const config = new Config({
       apiKey: apiKey || process.env.COZE_WORKLOAD_IDENTITY_API_KEY || "",
-      baseUrl: process.env.COZE_INTEGRATION_BASE_URL,
+      baseUrl,
+      modelBaseUrl: baseUrl,
     });
     const client = new LLMClient(config);
     

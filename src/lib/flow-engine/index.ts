@@ -9,6 +9,8 @@
 import { readFile } from "@/lib/file-utils";
 import { getWorkflowService } from "@/lib/harness/workflow";
 import type { ArtifactKind } from "@/lib/harness/types";
+import { readLatestPlanContent } from "@/lib/harness/plan-overrides";
+import { parseStatusFromContent, extractPeriod, checkReviewTiming } from "@/lib/plans/lifecycle";
 import path from "path";
 import fs from "fs";
 import {
@@ -17,6 +19,20 @@ import {
   getWeekNumber,
 } from "@/lib/flow-definitions";
 import type { FlowType, FlowDefinition, FlowValidationResult, PreconditionCheck } from "@/lib/flow-definitions";
+
+// 计划生成层级门禁：下级计划生成前需上级计划已 active
+const PLAN_GENERATION_GATE: Record<string, { planType: string; label: string }> = {
+  month_plan: { planType: "master", label: "Master Plan" },
+  week_plan: { planType: "monthly", label: "月计划" },
+  daily_plan: { planType: "weekly", label: "周计划" },
+};
+
+// 复盘流程 → 对应计划类型（用于时间检查）
+const REVIEW_TO_PLAN: Record<string, string> = {
+  daily_review: "daily",
+  week_review: "weekly",
+  monthly_review: "monthly",
+};
 
 // 重新导出纯数据模块供服务端消费者使用
 export type { FlowType, FlowDefinition, FlowValidationResult, PreconditionCheck } from "@/lib/flow-definitions";
@@ -99,10 +115,76 @@ export async function validateFlow(
     });
   }
 
+  // 计划生成层级门禁
+  if (definition.type === "plan_generation") {
+    const gate = PLAN_GENERATION_GATE[flowType];
+    if (gate) {
+      try {
+        const parentContent = await readLatestPlanContent(gate.planType);
+        if (parentContent) {
+          const parentStatus = parseStatusFromContent(parentContent);
+          if (parentStatus === "expired") {
+            warnings.push(
+              `${gate.label}状态为「逾期」，建议先更新状态后再生成子计划`
+            );
+            preconditions.push({
+              name: `${gate.label}已激活`,
+              passed: true,
+              message: `${gate.label}当前状态: expired（允许生成，建议处理逾期）`,
+            });
+          } else if (parentStatus !== "active" && parentStatus !== "completed") {
+            warnings.push(
+              `${gate.label}状态为「${parentStatus}」，需先激活上级计划后才能生成`
+            );
+            preconditions.push({
+              name: `${gate.label}已激活`,
+              passed: false,
+              message: `${gate.label}当前状态: ${parentStatus}（需要 active）`,
+            });
+          } else {
+            preconditions.push({
+              name: `${gate.label}已激活`,
+              passed: true,
+              message: "通过",
+            });
+          }
+        }
+      } catch {
+        // 上级计划不存在时，由文件检查逻辑处理
+      }
+    }
+  }
+
+  // 复盘流程时间检查（窗口提醒但不禁用）
+  if (definition.type === "review") {
+    const planType = REVIEW_TO_PLAN[flowType];
+    if (planType) {
+      try {
+        const planContent = await readLatestPlanContent(planType);
+        if (planContent) {
+          const period = extractPeriod(planType, planContent);
+          if (period) {
+            const now = new Date();
+            const timing = checkReviewTiming(planType, period.end, now);
+            if (now < period.end) {
+              warnings.push("计划周期尚未结束，建议到期后再复盘");
+            }
+            if (timing.isLate) {
+              warnings.push(`已超出复盘窗口 ${timing.latencyDays} 天，将标记为逾期复盘`);
+            }
+          }
+        }
+      } catch {
+        // 计划不存在时跳过
+      }
+    }
+  }
+
   // 检查是否所有前置文件都存在
   const hasUserInput = Boolean(userInput && userInput.length > 0);
-  const canProceedFlag: boolean = missingFiles.length === 0 && 
-    (definition.type !== "review" || hasUserInput);
+  const canProceedFlag: boolean = missingFiles.length === 0 &&
+    (definition.type !== "review" || hasUserInput) &&
+    preconditions.every((p) => p.passed);
 
   return {
     canProceed: canProceedFlag,
@@ -188,32 +270,6 @@ export async function readFlowFiles(flowType: FlowType): Promise<Record<string, 
   return contents;
 }
 
-/**
- * 自动更新计划状态
- * 计划完成后自动更新相关计划的状态
- */
-export async function autoUpdatePlanStatus(
-  flowType: FlowType,
-  outputContent: string
-): Promise<{ success: boolean; updated: string[]; error?: string }> {
-  try {
-    await getWorkflowService().preflight({
-      workflowType: "state_adjust",
-      input: {
-        sourceFlowType: flowType,
-        suggestedFromContent: outputContent.slice(0, 1000),
-      },
-    });
-
-    return { success: true, updated: [] };
-  } catch (error) {
-    return { 
-      success: false, 
-      updated: [],
-      error: (error as Error).message 
-    };
-  }
-}
 
 function artifactKindForFlow(flowType: FlowType): ArtifactKind {
   if (flowType.includes("review")) return "review";

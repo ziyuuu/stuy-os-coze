@@ -101,12 +101,14 @@ export const FLOW_DEFINITIONS: Record<FlowType, FlowDefinition> = {
     requiredReadFiles: [
       "current_status.md",
       "current_week_plan.md",
+      "current_daily_plan.md",
       "flows/daily_review_flow.md",
       "templates/daily_review_template.md",
     ],
     preconditions: [
       "current_status.md 中的当前阶段已定义",
       "current_week_plan.md 中的本周计划已存在",
+      "current_daily_plan.md 中的日计划已存在",
     ],
     output: {
       path: "plans/daily/{date}_review.md",
@@ -410,7 +412,7 @@ export function getWeekNumber(date: Date): string {
 export function getNextRecommendedFlow(currentFlow: FlowType): FlowType | null {
   const flowChain: Record<FlowType, FlowType | null> = {
     daily_plan: "daily_review",
-    daily_review: null,
+    daily_review: "daily_plan",
     daily_prep: "daily_plan",
     week_plan: "week_prep",
     week_prep: "daily_plan",

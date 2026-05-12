@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { COOKIE_NAME, verifyToken } from "@/lib/auth";
 
 // 无需登录即可访问的路径
-const PUBLIC_PATHS = ["/login", "/api/auth/login"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/llm-proxy"];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some(

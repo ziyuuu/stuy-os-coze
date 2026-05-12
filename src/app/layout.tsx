@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import { Inspector } from 'react-dev-inspector';
 import { AppShell } from '@/components/layout/app-shell';
 import './globals.css';
 
@@ -17,12 +16,9 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
-
   return (
     <html lang="zh-CN">
       <body className="antialiased min-h-screen bg-background">
-        {isDev && <Inspector />}
         <AppShell>{children}</AppShell>
       </body>
     </html>

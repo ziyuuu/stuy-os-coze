@@ -3,7 +3,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Archive, CheckCircle2, Clock, FileText, FolderOpen, Image } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { Artifact } from "@/lib/harness/types";
 
@@ -102,6 +110,8 @@ function SummaryCard({ icon, title, value }: { icon: React.ReactNode; title: str
 }
 
 function ArtifactSection({ loading, artifacts }: { loading: boolean; artifacts: Artifact[] }) {
+  const [selected, setSelected] = useState<Artifact | null>(null);
+
   if (loading) {
     return (
       <Card>
@@ -121,34 +131,60 @@ function ArtifactSection({ loading, artifacts }: { loading: boolean; artifacts: 
   }
 
   return (
-    <div className="space-y-3">
-      {artifacts.map((artifact) => {
-        const typeInfo = typeConfig[artifact.kind] || typeConfig.unknown;
-        return (
-          <Card key={artifact.id} className="hover:border-primary/50 transition-colors">
-            <CardHeader className="pb-2">
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className={`p-2 rounded-lg ${typeInfo.color} text-white`}>
-                    {typeInfo.icon}
+    <>
+      <div className="space-y-3">
+        {artifacts.map((artifact) => {
+          const typeInfo = typeConfig[artifact.kind] || typeConfig.unknown;
+          return (
+            <Card
+              key={artifact.id}
+              className="hover:border-primary/50 transition-colors cursor-pointer"
+              onClick={() => setSelected(artifact)}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`p-2 rounded-lg ${typeInfo.color} text-white`}>
+                      {typeInfo.icon}
+                    </div>
+                    <div className="min-w-0">
+                      <CardTitle className="text-base truncate">{artifact.title}</CardTitle>
+                      <CardDescription className="text-xs truncate">{artifact.id}</CardDescription>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <CardTitle className="text-base truncate">{artifact.title}</CardTitle>
-                    <CardDescription className="text-xs truncate">{artifact.id}</CardDescription>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant="outline" className="text-xs">{typeInfo.label}</Badge>
+                    <Badge variant="secondary" className="text-xs">{artifact.createdAt.slice(0, 10)}</Badge>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className="text-xs">{typeInfo.label}</Badge>
-                  <Badge variant="secondary" className="text-xs">{artifact.createdAt.slice(0, 10)}</Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground line-clamp-3">{artifact.content}</p>
-            </CardContent>
-          </Card>
-        );
-      })}
-    </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground line-clamp-3">{artifact.content}</p>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{selected?.title}</DialogTitle>
+            <DialogDescription className="flex items-center gap-2 flex-wrap">
+              <Badge variant="outline" className="text-xs">
+                {typeConfig[selected?.kind || "unknown"]?.label || "未分类"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">{selected?.id}</span>
+              <span className="text-xs text-muted-foreground">{selected?.createdAt?.slice(0, 10)}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-4">
+            <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed">
+              {selected?.content}
+            </pre>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

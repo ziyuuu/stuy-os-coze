@@ -64,20 +64,16 @@ export async function GET(request: NextRequest) {
   }
 }
 
+import { parseBody } from '@/lib/validation/helpers';
+import { FlowValidateSchema } from '@/lib/validation/schemas';
+
 export async function POST(request: NextRequest) {
+  const parsed = await parseBody(request, FlowValidateSchema);
+  if (!parsed.success) return parsed.errorResponse;
+  const { flowType, userInput } = parsed.data;
+
   try {
-    const body = await request.json();
-    const flowType = (body.flowType || body.type) as FlowType | undefined;
-    const userInput = body.userInput as string | undefined;
-
-    if (!flowType) {
-      return NextResponse.json(
-        { success: false, error: "缺少 flowType 参数" },
-        { status: 400 }
-      );
-    }
-
-    const validation = normalizeValidation(await validateFlow(flowType, userInput));
+    const validation = normalizeValidation(await validateFlow(flowType as FlowType, userInput));
     return NextResponse.json(validation);
   } catch (error) {
     console.error("[Flow Validate Error]", error);

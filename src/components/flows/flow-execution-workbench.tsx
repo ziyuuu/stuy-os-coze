@@ -51,6 +51,18 @@ function deriveArtifactKind(flowType: string): string {
   return "plan";
 }
 
+const FLOW_TYPE_TO_PLAN_TYPE: Record<string, string> = {
+  daily_plan: "daily",
+  week_plan: "weekly",
+  month_plan: "monthly",
+  daily_review: "daily",
+  week_review: "weekly",
+  monthly_review: "monthly",
+  daily_prep: "daily",
+  week_prep: "weekly",
+  month_prep: "monthly",
+};
+
 function makeTitle(flowName: string): string {
   const date = new Date().toISOString().split("T")[0];
   return `${flowName} ${date}`;
@@ -119,6 +131,7 @@ export function FlowExecutionWorkbench({
   const selectFlow = (flowType: string, flowName: string) => {
     setSelectedFlow(flowType);
     setSelectedFlowName(flowName);
+    setUserInput("");
     setValidation(null);
     setDraftContent("");
     setSavedDraft(null);
@@ -173,6 +186,8 @@ export function FlowExecutionWorkbench({
           if (done) break;
           setDraftContent((prev) => prev + decoder.decode(value));
         }
+      } else {
+        setError("响应无内容，请重试");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "生成草稿失败");
@@ -197,6 +212,7 @@ export function FlowExecutionWorkbench({
           evidenceType: "draft",
           metadata: {
             flowType: selectedFlow,
+            planType: FLOW_TYPE_TO_PLAN_TYPE[selectedFlow] || "",
             userInput: userInput || "",
             source: "flow_execution_workbench",
           },
@@ -235,6 +251,26 @@ export function FlowExecutionWorkbench({
       });
       setSavedDraft(null);
       setStateUpdateSuggestion(data.data.stateUpdateSuggestion || "");
+
+      // 复盘确认后的计划联动结果
+      if (data.data.planResult) {
+        const pr = data.data.planResult;
+        const parts: string[] = [];
+        if (pr.completed) {
+          parts.push(`✅ ${pr.planType} 计划已自动完成`);
+          if (pr.isLateReview) {
+            parts.push(`⚠️ 逾期复盘（${pr.latencyDays} 天）`);
+          }
+          if (pr.cascadeSuggestion) {
+            parts.push(`👉 ${pr.cascadeSuggestion}`);
+          }
+        } else if (pr.error) {
+          parts.push(`⚠️ 计划状态更新: ${pr.error}`);
+        }
+        if (parts.length > 0) {
+          setStateUpdateSuggestion((prev) => prev + "\n\n" + parts.join("\n"));
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "确认提交失败");
     } finally {

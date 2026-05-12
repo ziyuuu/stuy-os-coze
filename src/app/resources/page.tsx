@@ -3,17 +3,38 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  BookOpen, 
-  Video, 
-  FileText, 
+import {
+  BookOpen,
+  Video,
+  FileText,
   Wrench,
   FolderOpen,
   Users,
   Lightbulb,
-  CheckCircle2
+  Plus,
+  Loader2,
 } from 'lucide-react';
 
 interface Resource {
@@ -61,6 +82,12 @@ function ResourceSkeleton() {
   );
 }
 
+const RESOURCE_TYPES = [
+  { value: 'source_material', label: '来源材料' },
+  { value: 'learning_record', label: '学习记录' },
+  { value: 'idea_pool', label: '想法池' },
+];
+
 export default function ResourcesPage() {
   const [resources, setResources] = useState<Resource[]>([]);
   const [sourceMaterials, setSourceMaterials] = useState<{ id: string; name: string; type: string }[]>([]);
@@ -71,31 +98,81 @@ export default function ResourcesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchResources() {
-      try {
-        const response = await fetch('/api/resources');
-        const data = await response.json();
-        
-        if (data.success) {
-          setResources(data.data.resources);
-          setSourceMaterials(data.data.sourceMaterials);
-          setNotionExports(data.data.notionExports);
-          setMethodologies(data.data.methodologies);
-          setRoles(data.data.roles);
-          setSummary(data.data.summary);
-        } else {
-          setError(data.error || '获取资源列表失败');
-        }
-      } catch (err) {
-        setError('网络错误');
-      } finally {
-        setLoading(false);
-      }
-    }
+  // 添加资源 Dialog 状态
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newContent, setNewContent] = useState('');
+  const [newType, setNewType] = useState('source_material');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const fetchResources = async () => {
+    try {
+      const response = await fetch('/api/resources');
+      const data = await response.json();
+
+      if (data.success) {
+        setResources(data.data.resources);
+        setSourceMaterials(data.data.sourceMaterials);
+        setNotionExports(data.data.notionExports);
+        setMethodologies(data.data.methodologies);
+        setRoles(data.data.roles);
+        setSummary(data.data.summary);
+      } else {
+        setError(data.error || '获取资源列表失败');
+      }
+    } catch {
+      setError('网络错误');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchResources();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const handleAddResource = async () => {
+    if (!newTitle.trim() || !newContent.trim()) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      // Step 1: create draft
+      const execRes = await fetch('/api/workflows/execute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          workflowType: 'resource_ingest',
+          artifactKind: newType,
+          title: newTitle.trim(),
+          content: newContent.trim(),
+        }),
+      });
+      const execData = await execRes.json();
+      if (!execData.success) throw new Error(execData.error || '创建草稿失败');
+
+      // Step 2: confirm draft
+      const draftId = execData.data.draft.id;
+      const confirmRes = await fetch('/api/workflows/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ draftId }),
+      });
+      const confirmData = await confirmRes.json();
+      if (!confirmData.success) throw new Error(confirmData.error || '确认失败');
+
+      setDialogOpen(false);
+      setNewTitle('');
+      setNewContent('');
+      setNewType('source_material');
+      fetchResources();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : '提交失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return <ResourceSkeleton />;
@@ -113,11 +190,77 @@ export default function ResourcesPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">资源管理</h1>
-        <p className="text-muted-foreground mt-2">
-          管理你的学习资源、来源材料和方法论库
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">资源管理</h1>
+          <p className="text-muted-foreground mt-2">
+            管理你的学习资源、来源材料和方法论库
+          </p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              添加资源
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>添加资源</DialogTitle>
+              <DialogDescription>
+                添加新的学习资料、来源材料或想法
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="res-type">资源类型</Label>
+                <Select value={newType} onValueChange={setNewType}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RESOURCE_TYPES.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        {t.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="res-title">标题</Label>
+                <Input
+                  id="res-title"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="资源标题..."
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="res-content">内容</Label>
+                <Textarea
+                  id="res-content"
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  placeholder="资源内容或描述..."
+                  rows={5}
+                />
+              </div>
+              {submitError && (
+                <p className="text-sm text-red-500">{submitError}</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
+                取消
+              </Button>
+              <Button onClick={handleAddResource} disabled={submitting || !newTitle.trim() || !newContent.trim()}>
+                {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                提交
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* 统计卡片 */}

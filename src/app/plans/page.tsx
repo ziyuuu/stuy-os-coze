@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { FileText, Calendar, Target, CheckCircle2, Sun, Settings, Upload, Trash2, Edit, GripVertical, Sparkles, Send, Loader2, RotateCcw, Save, X, MessageSquare } from 'lucide-react';
+import { FileText, Calendar, Target, Sun, Settings, Upload, Trash2, Edit, GripVertical, Sparkles, AlertTriangle, Loader2 } from 'lucide-react';
+import type { PlanStatus } from '@/lib/plans/lifecycle';
+import { VALID_TRANSITIONS } from '@/lib/plans/lifecycle';
+import { ProgressGrid } from '@/components/plans/progress-grid';
 import {
   DndContext,
   closestCenter,
@@ -16,7 +19,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  DragOverlay,
 } from '@dnd-kit/core';
 import {
   SortableContext,
@@ -42,10 +44,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 interface MasterPlan {
   title: string;
@@ -53,6 +53,24 @@ interface MasterPlan {
   totalMonths: number;
   currentPhase: string;
   content?: string;
+  warnings?: string[];
+}
+
+interface ProgressGridItem {
+  date: string;
+  status: "completed" | "incomplete" | "no_plan" | "future";
+}
+
+interface PlanProgress {
+  periodStart: string;
+  periodEnd: string;
+  today: string;
+  totalDaysToDate: number;
+  completedDays: number;
+  incompleteDays: number;
+  noPlanDays: number;
+  futureDays: number;
+  grid: ProgressGridItem[];
 }
 
 interface MonthPlan {
@@ -65,6 +83,8 @@ interface MonthPlan {
   modules: { id: string; name: string; description: string }[];
   resources: { id: string; name: string; status: string }[];
   content?: string;
+  progress?: PlanProgress;
+  warnings?: string[];
 }
 
 interface WeekPlan {
@@ -75,6 +95,8 @@ interface WeekPlan {
   deliverables: string[];
   boundaries: string[];
   content?: string;
+  progress?: PlanProgress;
+  warnings?: string[];
 }
 
 interface DailyPlan {
@@ -84,9 +106,10 @@ interface DailyPlan {
   phase: string;
   tasks: { description: string; completed: boolean }[];
   content?: string;
+  warnings?: string[];
 }
 
-type PlanType = 'master' | 'month' | 'week' | 'daily';
+type PlanType = 'master' | 'monthly' | 'weekly' | 'daily';
 
 // 可拖拽排序项组件属性
 interface SortableItemProps {
@@ -94,24 +117,24 @@ interface SortableItemProps {
   content: string;
 }
 
-// 状态映射函数 - 仅4种状态
+// 4态：draft → active → completed → expired
 const statusMap: Record<string, string> = {
-  draft: '草稿',
-  approved: '已批准',
+  draft: '未开始',
   active: '进行中',
   completed: '已完成',
+  expired: '逾期',
 };
 
 const getStatusLabel = (status: string | undefined) => {
-  if (!status) return '待开始';
+  if (!status) return '未开始';
   return statusMap[status] || status;
 };
 
 const getStatusVariant = (status: string | undefined) => {
-  if (!status || status === 'draft' || status === '草稿') return 'outline';
-  if (status === 'active' || status === '进行中') return 'secondary';
-  if (status === 'approved' || status === '已批准') return 'default';
-  if (status === 'completed' || status === '已完成') return 'default';
+  if (!status || status === 'draft') return 'outline';
+  if (status === 'active') return 'secondary';
+  if (status === 'completed') return 'default';
+  if (status === 'expired') return 'destructive';
   return 'outline';
 };
 
@@ -140,7 +163,10 @@ export default function PlansPage() {
   // 状态编辑弹窗
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
   const [statusPlanType, setStatusPlanType] = useState<PlanType | null>(null);
+  const [statusDialogCurrent, setStatusDialogCurrent] = useState<PlanStatus>('draft');
   const [newStatus, setNewStatus] = useState('draft');
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const validStatusTargets = VALID_TRANSITIONS[statusDialogCurrent] || [];
 
   // 上传弹窗
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -150,19 +176,21 @@ export default function PlansPage() {
   // 删除确认弹窗
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletePlanType, setDeletePlanType] = useState<PlanType | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // 编辑弹窗
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editPlanType, setEditPlanType] = useState<PlanType | null>(null);
   const [editContent, setEditContent] = useState('');
   const [originalContent, setOriginalContent] = useState(''); // 原始内容用于比较
-  const [hasChanges, setHasChanges] = useState(false); // 是否有未保存的更改
-  const [aiChatOpen, setAiChatOpen] = useState(false); // AI 对话弹窗
-  const [aiMessages, setAiMessages] = useState<Array<{role: 'user' | 'assistant'; content: string}>>([]);
-  const [aiInput, setAiInput] = useState(''); // AI 输入
-  const [items, setItems] = useState<string[]>([]); // 拖拽列表
-  const [isAiLoading, setIsAiLoading] = useState(false); // AI 加载状态
-  const [saveResult, setSaveResult] = useState<string | null>(null); // harness 保存结果
+  const [hasChanges, setHasChanges] = useState(false);
+  const [items, setItems] = useState<string[]>([]);
+  const [saveResult, setSaveResult] = useState<string | null>(null);
+  const [unsavedDialogOpen, setUnsavedDialogOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // 拖拽功能
   const sensors = useSensors(
@@ -186,7 +214,7 @@ export default function PlansPage() {
         });
         // 同时更新文本内容
         setEditContent((prev) => {
-          const lines = prev.split('\n').filter(l => l.trim());
+          const lines = prev.split('\n');
           const newLines = [...lines];
           const [removed] = newLines.splice(oldIndex, 1);
           newLines.splice(newIndex, 0, removed);
@@ -194,53 +222,6 @@ export default function PlansPage() {
         });
       }
     }
-  };
-
-  // AI 对话处理
-  const handleAiChat = async () => {
-    if (!aiInput.trim() || isAiLoading) return;
-    
-    const userMessage = aiInput;
-    setAiInput('');
-    setAiMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    setIsAiLoading(true);
-
-    try {
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMessage,
-          currentContent: editContent,
-          planType: editPlanType,
-        }),
-      });
-      const data = await response.json();
-      
-      if (data.success) {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: data.data }]);
-      } else {
-        setAiMessages(prev => [...prev, { role: 'assistant', content: '抱歉，AI 处理失败了。' }]);
-      }
-    } catch (err) {
-      setAiMessages(prev => [...prev, { role: 'assistant', content: '抱歉，AI 处理失败了。' }]);
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
-  // 打开编辑弹窗时初始化
-  const handleOpenEdit = (planType: PlanType, content: string) => {
-    setEditPlanType(planType);
-    setEditContent(content);
-    setOriginalContent(content);
-    setHasChanges(false);
-    setAiMessages([]);
-    setAiChatOpen(false);
-    // 初始化拖拽列表
-    const lines = content.split('\n').filter(l => l.trim());
-    setItems(lines);
-    setEditDialogOpen(true);
   };
 
   const fetchPlans = async () => {
@@ -275,7 +256,9 @@ export default function PlansPage() {
   // 打开状态编辑弹窗
   const openStatusDialog = (planType: PlanType, currentStatus: string) => {
     setStatusPlanType(planType);
-    setNewStatus(currentStatus);
+    setStatusDialogCurrent((currentStatus || 'draft') as PlanStatus);
+    setNewStatus(currentStatus || 'draft');
+    setStatusError(null);
     setStatusDialogOpen(true);
   };
 
@@ -297,9 +280,9 @@ export default function PlansPage() {
     setEditPlanType(planType);
     // 根据计划类型获取当前内容
     let content = '';
-    if (planType === 'month' && monthPlan) {
+    if (planType === 'monthly' && monthPlan) {
       content = monthPlan.content || '';
-    } else if (planType === 'week' && weekPlan) {
+    } else if (planType === 'weekly' && weekPlan) {
       content = weekPlan.content || '';
     } else if (planType === 'daily' && dailyPlan) {
       content = dailyPlan.content || '';
@@ -309,7 +292,7 @@ export default function PlansPage() {
     setEditContent(content);
     setOriginalContent(content); // 保存原始内容用于检测变化
     // 解析内容为行列表用于拖拽
-    const lines = content.split('\n').filter(line => line.trim());
+    const lines = content.split('\n');
     setItems(lines);
     setEditDialogOpen(true);
   };
@@ -324,7 +307,7 @@ export default function PlansPage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        workflowType: planType === "master" ? "master_plan" : planType === "month" ? "month_plan" : planType === "week" ? "week_plan" : "daily_plan",
+        workflowType: planType === "master" ? "master_plan" : planType === "monthly" ? "month_plan" : planType === "weekly" ? "week_plan" : "daily_plan",
         artifactKind,
         title,
         content,
@@ -356,16 +339,24 @@ export default function PlansPage() {
     };
   };
 
+  const handleCloseEdit = () => {
+    if (hasChanges) {
+      setUnsavedDialogOpen(true);
+    } else {
+      setEditDialogOpen(false);
+    }
+  };
+
   // 保存编辑内容
   const handleSaveEdit = async () => {
-    if (!editPlanType || !editContent.trim()) return;
+    if (!editPlanType || !editContent.trim() || isSaving) return;
 
-    // 检测是否有变化
     if (editContent === originalContent) {
       setEditDialogOpen(false);
       return;
     }
 
+    setIsSaving(true);
     try {
       const result = await saveViaHarness(editPlanType, editContent);
       setSaveResult(
@@ -375,22 +366,25 @@ export default function PlansPage() {
       fetchPlans();
     } catch (err) {
       console.error("保存编辑失败", err);
+    } finally {
+      setIsSaving(false);
     }
   };
 
   // 保存状态
   const handleSaveStatus = async () => {
-    if (!statusPlanType) return;
-    
+    if (!statusPlanType || isSavingStatus) return;
+    setStatusError(null);
+    setIsSavingStatus(true);
+
     try {
-      // 根据计划类型调用不同的 API
       const apiMap: Record<string, string> = {
         master: '/api/plans/master',
-        month: '/api/plans/month',
-        week: '/api/plans/week',
+        monthly: '/api/plans/month',
+        weekly: '/api/plans/week',
         daily: '/api/plans/daily'
       };
-      
+
       const response = await fetch(apiMap[statusPlanType] || apiMap.master, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -399,17 +393,24 @@ export default function PlansPage() {
 
       if (response.ok) {
         setStatusDialogOpen(false);
+        setStatusError(null);
         fetchPlans();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setStatusError(data.error || '状态更新失败，请重试');
       }
     } catch (err) {
-      console.error('保存状态失败', err);
+      setStatusError(err instanceof Error ? err.message : '保存状态失败');
+    } finally {
+      setIsSavingStatus(false);
     }
   };
 
   // 上传计划
   const handleUploadPlan = async () => {
-    if (!uploadPlanType) return;
+    if (!uploadPlanType || isUploading) return;
 
+    setIsUploading(true);
     try {
       const result = await saveViaHarness(uploadPlanType, uploadContent);
       setSaveResult(
@@ -420,23 +421,34 @@ export default function PlansPage() {
       fetchPlans();
     } catch (err) {
       console.error("上传计划失败", err);
+    } finally {
+      setIsUploading(false);
     }
   };
 
   // 删除计划
   const handleDeletePlan = async () => {
-    if (!deletePlanType) return;
-    
+    if (!deletePlanType || isDeleting) return;
+    setDeleteError(null);
+    setIsDeleting(true);
+
     try {
-      const endpoint = `/api/plans/${deletePlanType}`;
+      const urlType = deletePlanType === 'monthly' ? 'month' : deletePlanType === 'weekly' ? 'week' : deletePlanType;
+      const endpoint = `/api/plans/${urlType}`;
       const response = await fetch(endpoint, { method: 'DELETE' });
 
       if (response.ok) {
         setDeleteDialogOpen(false);
+        setDeleteError(null);
         fetchPlans();
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setDeleteError(data.error || `删除失败 (${response.status})`);
       }
     } catch (err) {
-      console.error('删除计划失败', err);
+      setDeleteError(err instanceof Error ? err.message : '删除计划失败');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -527,6 +539,34 @@ export default function PlansPage() {
         </Card>
       )}
 
+      {/* Auto-transition warnings */}
+      {(() => {
+        const allWarnings: { plan: string; warnings: string[] }[] = [];
+        if (masterPlan?.warnings?.length) allWarnings.push({ plan: '总计划', warnings: masterPlan.warnings });
+        if (monthPlan?.warnings?.length) allWarnings.push({ plan: '月计划', warnings: monthPlan.warnings });
+        if (weekPlan?.warnings?.length) allWarnings.push({ plan: '周计划', warnings: weekPlan.warnings });
+        if (dailyPlan?.warnings?.length) allWarnings.push({ plan: '日计划', warnings: dailyPlan.warnings });
+        if (allWarnings.length === 0) return null;
+        return (
+          <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950/20">
+            <CardContent className="py-3">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm font-medium text-yellow-700 dark:text-yellow-400">系统提醒</span>
+              </div>
+              {allWarnings.map((pw, i) => (
+                <div key={i} className="mb-1">
+                  <span className="text-xs font-medium text-yellow-600">{pw.plan}：</span>
+                  {pw.warnings.map((w, j) => (
+                    <p key={j} className="text-sm text-yellow-700 dark:text-yellow-400 ml-2">{w}</p>
+                  ))}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {/* 计划概览卡片 - 统一4个计划的卡片版式 */}
       <div className="grid gap-4 md:grid-cols-4">
         {/* Master Plan */}
@@ -544,7 +584,7 @@ export default function PlansPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">12 个月</div>
+            <div className="text-2xl font-bold">{masterPlan?.totalMonths || 12} 个月</div>
             <p className="text-xs text-muted-foreground">
               v{masterPlan?.version || '2.0'}
             </p>
@@ -565,7 +605,7 @@ export default function PlansPage() {
               >
                 {getStatusLabel(monthPlan?.status)}
               </Badge>
-              {renderSettingsMenu('month', monthPlan?.status || 'draft')}
+              {renderSettingsMenu('monthly', monthPlan?.status || 'draft')}
             </div>
           </CardHeader>
           <CardContent>
@@ -588,7 +628,7 @@ export default function PlansPage() {
               >
                 {getStatusLabel(weekPlan?.status)}
               </Badge>
-              {renderSettingsMenu('week', weekPlan?.status || 'draft')}
+              {renderSettingsMenu('weekly', weekPlan?.status || 'draft')}
             </div>
           </CardHeader>
           <CardContent>
@@ -629,8 +669,8 @@ export default function PlansPage() {
       <Tabs defaultValue="master" className="space-y-4">
         <TabsList>
           <TabsTrigger value="master">总计划</TabsTrigger>
-          <TabsTrigger value="month">月计划</TabsTrigger>
-          <TabsTrigger value="week">周计划</TabsTrigger>
+          <TabsTrigger value="monthly">月计划</TabsTrigger>
+          <TabsTrigger value="weekly">周计划</TabsTrigger>
           <TabsTrigger value="daily">日计划</TabsTrigger>
         </TabsList>
 
@@ -656,13 +696,14 @@ export default function PlansPage() {
         </TabsContent>
 
         {/* Month Plan Tab */}
-        <TabsContent value="month" className="space-y-4">
+        <TabsContent value="monthly" className="space-y-4">
+          <ProgressGrid progress={monthPlan?.progress} />
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>本月计划</CardTitle>
-                <Badge variant={monthPlan?.status === 'completed' ? 'default' : monthPlan?.status === 'formal' ? 'secondary' : 'outline'}>
-                  {monthPlan?.status || 'pending'}
+                <Badge variant={getStatusVariant(monthPlan?.status)}>
+                  {getStatusLabel(monthPlan?.status)}
                 </Badge>
               </div>
               <CardDescription>Month {monthPlan?.index || 1} · {monthPlan?.phase || 'Phase'}</CardDescription>
@@ -674,7 +715,7 @@ export default function PlansPage() {
                     {monthPlan.content}
                   </pre>
                 </div>
-              ) : monthPlan?.goals?.rows ? (
+              ) : monthPlan?.goals?.rows && monthPlan.goals.rows.length > 0 ? (
                 <div className="space-y-3">
                   {monthPlan.goals.rows.map((row, index) => (
                     <div key={index} className="p-4 rounded-lg border bg-card">
@@ -700,7 +741,8 @@ export default function PlansPage() {
         </TabsContent>
 
         {/* Week Plan Tab */}
-        <TabsContent value="week" className="space-y-4">
+        <TabsContent value="weekly" className="space-y-4">
+          <ProgressGrid progress={weekPlan?.progress} />
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -786,29 +828,45 @@ export default function PlansPage() {
           <DialogHeader>
             <DialogTitle>调整状态</DialogTitle>
             <DialogDescription>
-              修改 {statusPlanType === 'master' ? '总计划' : 
-                    statusPlanType === 'month' ? '月计划' : 
-                    statusPlanType === 'week' ? '周计划' : '日计划'} 的状态
+              修改 {statusPlanType === 'master' ? '总计划' :
+                    statusPlanType === 'monthly' ? '月计划' :
+                    statusPlanType === 'weekly' ? '周计划' : '日计划'} 的状态
+              （当前：{statusMap[statusDialogCurrent] || statusDialogCurrent}）
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
+          <div className="py-4 space-y-3">
             <Select value={newStatus} onValueChange={setNewStatus}>
               <SelectTrigger>
                 <SelectValue placeholder="选择状态" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="draft">草稿</SelectItem>
-                <SelectItem value="approved">已批准</SelectItem>
-                <SelectItem value="active">进行中</SelectItem>
-                <SelectItem value="completed">已完成</SelectItem>
+                {(["draft", "active", "completed", "expired"] as PlanStatus[]).map((s) => (
+                  <SelectItem
+                    key={s}
+                    value={s}
+                    disabled={s === statusDialogCurrent || !validStatusTargets.includes(s)}
+                  >
+                    {statusMap[s]}
+                    {s === statusDialogCurrent ? ' (当前)' : !validStatusTargets.includes(s) ? ' (不可用)' : ''}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {statusError && (
+              <div className="flex items-center gap-2 text-sm text-red-500 bg-red-50 dark:bg-red-950/20 p-3 rounded-lg">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <span>{statusError}</span>
+              </div>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setStatusDialogOpen(false)} disabled={isSavingStatus}>
               取消
             </Button>
-            <Button onClick={handleSaveStatus}>保存</Button>
+            <Button onClick={handleSaveStatus} disabled={isSavingStatus}>
+              {isSavingStatus && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              保存
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -819,9 +877,9 @@ export default function PlansPage() {
           <DialogHeader>
             <DialogTitle>上传计划</DialogTitle>
             <DialogDescription>
-              粘贴计划内容，上传 {uploadPlanType === 'master' ? '总计划' : 
-                              uploadPlanType === 'month' ? '月计划' : 
-                              uploadPlanType === 'week' ? '周计划' : '日计划'}
+              粘贴计划内容，上传 {uploadPlanType === 'master' ? '总计划' :
+                              uploadPlanType === 'monthly' ? '月计划' :
+                              uploadPlanType === 'weekly' ? '周计划' : '日计划'}
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -833,10 +891,11 @@ export default function PlansPage() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setUploadDialogOpen(false)} disabled={isUploading}>
               取消
             </Button>
-            <Button onClick={handleUploadPlan} disabled={!uploadContent.trim()}>
+            <Button onClick={handleUploadPlan} disabled={isUploading || !uploadContent.trim()}>
+              {isUploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               上传
             </Button>
           </DialogFooter>
@@ -849,16 +908,23 @@ export default function PlansPage() {
           <DialogHeader>
             <DialogTitle>确认删除</DialogTitle>
             <DialogDescription>
-              确定要删除 {deletePlanType === 'master' ? '总计划' : 
-                           deletePlanType === 'month' ? '月计划' : 
-                           deletePlanType === 'week' ? '周计划' : '日计划'} 吗？此操作不可撤销。
+              确定要删除 {deletePlanType === 'master' ? '总计划' :
+                           deletePlanType === 'monthly' ? '月计划' :
+                           deletePlanType === 'weekly' ? '周计划' : '日计划'} 吗？此操作不可撤销。
             </DialogDescription>
           </DialogHeader>
+          {deleteError && (
+            <div className="flex items-center gap-2 text-sm text-red-500 bg-red-50 dark:bg-red-950/20 p-3 rounded-lg">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              <span>{deleteError}</span>
+            </div>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => { setDeleteDialogOpen(false); setDeleteError(null); }} disabled={isDeleting}>
               取消
             </Button>
-            <Button variant="destructive" onClick={handleDeletePlan}>
+            <Button variant="destructive" onClick={handleDeletePlan} disabled={isDeleting}>
+              {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               删除
             </Button>
           </DialogFooter>
@@ -866,120 +932,90 @@ export default function PlansPage() {
       </Dialog>
 
       {/* 编辑内容弹窗 - 增强版 */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+      <Dialog open={editDialogOpen} onOpenChange={(open) => { if (!open) handleCloseEdit(); }}>
         <DialogContent className="max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>编辑内容</DialogTitle>
             <DialogDescription>
-              编辑 {editPlanType === 'master' ? '总计划' : 
-                    editPlanType === 'month' ? '月计划' : 
-                    editPlanType === 'week' ? '周计划' : '日计划'} 的内容
+              编辑 {editPlanType === 'master' ? '总计划' :
+                    editPlanType === 'monthly' ? '月计划' :
+                    editPlanType === 'weekly' ? '周计划' : '日计划'} 的内容
             </DialogDescription>
           </DialogHeader>
           
-          {/* Tab 切换 */}
-          <div className="flex gap-2 mb-4 flex-shrink-0">
-            <Button 
-              variant={!aiChatOpen ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setAiChatOpen(false)}
-            >
-              手动编辑
-            </Button>
-            <Button 
-              variant={aiChatOpen ? "default" : "outline"} 
-              size="sm"
-              onClick={() => setAiChatOpen(true)}
-            >
-              AI 对话
-            </Button>
-          </div>
-          
           {/* 内容区域 - 可滚动 */}
           <div className="flex-1 overflow-y-auto min-h-0 pr-2">
-            {!aiChatOpen ? (
-              /* 手动编辑模式 */
-              <div className="space-y-4 pb-4">
-                {/* 拖拽列表 */}
-                <div className="border rounded-lg p-3 bg-muted/30">
-                  <p className="text-xs text-muted-foreground mb-2">拖拽调整顺序（按住 grip 图标拖动）：</p>
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                    <SortableContext items={items.map((_, i) => `item-${i}`)} strategy={verticalListSortingStrategy}>
-                      <div className="space-y-2">
-                        {items.map((item, index) => (
-                          <SortableItemComponent 
-                            key={`item-${index}`}
-                            id={`item-${index}`} 
-                            content={`${index + 1}. ${item}`} 
-                          />
-                        ))}
-                      </div>
-                    </SortableContext>
-                  </DndContext>
-                </div>
-                {/* 文本编辑区 */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">文本编辑：</p>
-                  <Textarea
-                    value={editContent}
-                    onChange={(e) => {
-                      setEditContent(e.target.value);
-                      setHasChanges(e.target.value !== originalContent);
-                      const lines = e.target.value.split('\n').filter(l => l.trim());
-                      setItems(lines);
-                    }}
-                    placeholder="在下方文本框中编辑内容..."
-                    className="min-h-[150px] font-mono text-sm"
-                  />
-                </div>
-              </div>
-            ) : (
-              /* AI 对话模式 */
-              <div className="flex flex-col h-full">
-                <div className="flex-1 overflow-auto py-4 space-y-4">
-                  {aiMessages.length === 0 ? (
-                    <div className="text-center text-muted-foreground py-8">
-                      <MessageSquare className="mx-auto h-12 w-12 mb-4 opacity-50" />
-                      <p>发送消息与 AI 对话，帮你修改计划内容</p>
-                      <p className="text-sm mt-2">例如：把第二个任务改成练习题</p>
+            <div className="space-y-4 pb-4">
+              {/* 拖拽列表 */}
+              <div className="border rounded-lg p-3 bg-muted/30">
+                <p className="text-xs text-muted-foreground mb-2">拖拽调整顺序（按住 grip 图标拖动）：</p>
+                <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                  <SortableContext items={items.map((_, i) => `item-${i}`)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-2">
+                      {items.map((item, index) => (
+                        <SortableItemComponent
+                          key={item.slice(0, 40) + index}
+                          id={`item-${index}`}
+                          content={`${index + 1}. ${item}`}
+                        />
+                      ))}
                     </div>
-                  ) : (
-                    aiMessages.map((msg, i) => (
-                      <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[80%] rounded-lg p-3 ${
-                          msg.role === 'user' 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'bg-muted'
-                        }`}>
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-                <div className="flex gap-2 pt-4 border-t flex-shrink-0">
-                  <Input
-                    value={aiInput}
-                    onChange={(e) => setAiInput(e.target.value)}
-                    placeholder="输入修改指令..."
-                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleAiChat()}
-                    disabled={isAiLoading}
-                  />
-                  <Button onClick={handleAiChat} disabled={isAiLoading || !aiInput.trim()}>
-                    {isAiLoading ? '思考中...' : '发送'}
-                  </Button>
-                </div>
+                  </SortableContext>
+                </DndContext>
               </div>
-            )}
+              {/* 文本编辑区 */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">文本编辑：</p>
+                <Textarea
+                  value={editContent}
+                  onChange={(e) => {
+                    setEditContent(e.target.value);
+                    setHasChanges(e.target.value !== originalContent);
+                    const lines = e.target.value.split('\n');
+                    setItems(lines);
+                  }}
+                  placeholder="在下方文本框中编辑内容..."
+                  className="min-h-[150px] font-mono text-sm"
+                />
+              </div>
+            </div>
           </div>
           
           {/* 保存按钮 - 始终可见 */}
           <DialogFooter className="flex-shrink-0 pt-4 border-t">
-            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+            <Button variant="outline" onClick={handleCloseEdit} disabled={isSaving}>
               取消
             </Button>
-            <Button onClick={handleSaveEdit} disabled={!editContent.trim()}>
+            <Button onClick={handleSaveEdit} disabled={isSaving || !editContent.trim()}>
+              {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               保存
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 未保存更改确认弹窗 */}
+      <Dialog open={unsavedDialogOpen} onOpenChange={setUnsavedDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>有未保存的更改</DialogTitle>
+            <DialogDescription>
+              确定要放弃未保存的更改吗？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUnsavedDialogOpen(false)}>
+              继续编辑
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setUnsavedDialogOpen(false);
+                setHasChanges(false);
+                setEditDialogOpen(false);
+              }}
+            >
+              放弃
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1017,7 +1053,11 @@ function SortableItemComponent({ id, content }: { id: string; content: string })
     >
       <GripVertical className="h-4 w-4 mt-1 text-muted-foreground flex-shrink-0" />
       <div className="flex-1 min-w-0">
-        <div className="text-sm whitespace-pre-wrap">{content}</div>
+        {content.trim() ? (
+          <div className="text-sm whitespace-pre-wrap">{content}</div>
+        ) : (
+          <div className="text-sm text-muted-foreground italic h-4">&nbsp;</div>
+        )}
       </div>
     </div>
   );

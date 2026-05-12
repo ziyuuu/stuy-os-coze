@@ -11,7 +11,7 @@ import { Send, Loader2, Save, ArrowLeft, MessageSquare } from "lucide-react";
 import Link from "next/link";
 
 interface PlanContent {
-  type: "master" | "month" | "week" | "daily";
+  type: "master" | "monthly" | "weekly" | "daily";
   content: string;
   title: string;
 }
@@ -24,7 +24,7 @@ interface AdjustmentDraft {
 
 function PlanAdjustContent() {
   const searchParams = useSearchParams();
-  const planType = searchParams.get("type") || "month";
+  const planType = searchParams.get("type") || "monthly";
   const [instruction, setInstruction] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [draft, setDraft] = useState<AdjustmentDraft | null>(null);
@@ -39,9 +39,9 @@ function PlanAdjustContent() {
       try {
         const endpoints: Record<string, string> = {
           master: "/api/plans/master",
-          month: "/api/plans/month",
-          week: "/api/plans/week",
-          daily: "/api/plans/week",
+          monthly: "/api/plans/month",
+          weekly: "/api/plans/week",
+          daily: "/api/plans/daily",
         };
 
         const response = await fetch(endpoints[planType] || endpoints.month);
@@ -49,7 +49,7 @@ function PlanAdjustContent() {
 
         if (data.success) {
           setPlanContent({
-            type: planType as "master" | "month" | "week" | "daily",
+            type: planType as "master" | "monthly" | "weekly" | "daily",
             content: JSON.stringify(data.data, null, 2),
             title: getPlanTitle(planType),
           });
@@ -284,8 +284,8 @@ export default function PlanAdjustPage() {
 function getPlanTitle(type: string): string {
   const titles: Record<string, string> = {
     master: "Master Plan 调整",
-    month: "月计划调整",
-    week: "周计划调整",
+    monthly: "月计划调整",
+    weekly: "周计划调整",
     daily: "日计划调整",
   };
   return titles[type] || "计划调整";
